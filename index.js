@@ -1,6 +1,7 @@
 import express from "express";
 import { Client, middleware } from "@line/bot-sdk";
 import fetch from "node-fetch";
+import fs from "fs";
 
 const app = express();
 
@@ -14,9 +15,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const client = new Client(config);
 
-// ===== ★ JSONデータ =====
-import fs from "fs";
-
+// ===== JSON読み込み（安定版）=====
 const SCHOOL_DATA = JSON.parse(
   fs.readFileSync("./school.json", "utf-8")
 );
@@ -46,6 +45,14 @@ function getTodayItems(weekday) {
   ];
 }
 
+// ===== 共通返信 =====
+function reply(event, text) {
+  return client.replyMessage(event.replyToken, {
+    type: "text",
+    text
+  });
+}
+
 // ===== メイン処理 =====
 async function handleEvent(event) {
   if (event.type !== "message" || event.message.type !== "text") {
@@ -55,13 +62,21 @@ async function handleEvent(event) {
   const userMessage = event.message.text;
   const weekday = getTodayWeekday();
 
+  console.log("====== 新規リクエスト ======");
+  console.log("ユーザー入力:", userMessage);
+  console.log("曜日:", weekday);
+
   try {
     // ===== ① ルールベース処理 =====
 
-    // 下校時間
+    // --- 下校時間 ---
     if (userMessage.includes("下校") || userMessage.includes("帰り")) {
+      console.log("分岐: 下校時間");
+
       const gradeMatch = userMessage.match(/[1-6]/);
       const grade = gradeMatch ? gradeMatch[0] : null;
+
+      console.log("抽出学年:", grade);
 
       if (!grade) {
         return reply(event, "何年生か教えてください！（例：1年生）");
@@ -69,25 +84,41 @@ async function handleEvent(event) {
 
       const time = getDismissalTime(grade, weekday);
 
+      console.log("下校時間:", time);
+
       return reply(event, `${grade}年生の今日の下校時間は ${time} です`);
     }
 
-    // 持ち物
-    if (userMessage.includes("持ち物") || userMessage.includes("なに持って")) {
+    // --- 持ち物 ---
+    if (
+      userMessage.includes("持ち物") ||
+      userMessage.includes("なに持って") ||
+      userMessage.includes("何持って") ||
+      userMessage.includes("準備")
+    ) {
+      console.log("分岐: 持ち物");
+
       const items = getTodayItems(weekday);
+
+      console.log("持ち物:", items);
 
       return reply(event, `今日の持ち物です👇\n\n・${items.join("\n・")}`);
     }
 
-    // 登校時間
+    // --- 登校時間 ---
     if (userMessage.includes("登校")) {
+      console.log("分岐: 登校時間");
+
       const { start, end } = SCHOOL_DATA.time_rules.arrival;
+
       return reply(event, `登校時間は ${start}〜${end} です`);
     }
 
-    // ===== ② AI補助（最後の手段） =====
+    console.log("分岐: AI処理へフォールバック");
+
+    // ===== ② AI補助 =====
     const aiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: {
@@ -117,24 +148,26 @@ ${userMessage}
 
     const data = await aiRes.json();
 
-    const replyText =
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "うまく答えられませんでした";
+    console.log("AIレスポンス:", JSON.stringify(data, null, 2));
+
+    let replyText = "うまく答えられませんでした";
+
+    if (data.error) {
+      replyText = `APIエラー: ${data.error.message}`;
+    } else if (
+      data.candidates &&
+      data.candidates.length > 0 &&
+      data.candidates[0].content?.parts?.length > 0
+    ) {
+      replyText = data.candidates[0].content.parts[0].text;
+    }
 
     return reply(event, replyText);
 
   } catch (error) {
-    console.error(error);
+    console.error("全体エラー:", error);
     return reply(event, "エラーが発生しました😢");
   }
-}
-
-// ===== 共通返信 =====
-function reply(event, text) {
-  return client.replyMessage(event.replyToken, {
-    type: "text",
-    text
-  });
 }
 
 // ===== サーバー起動 =====
