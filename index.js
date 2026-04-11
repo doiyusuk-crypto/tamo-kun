@@ -12,32 +12,27 @@ const config = {
 };
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
 const client = new Client(config);
 
 // ===== JSON読み込み =====
-const SCHOOL_DATA = JSON.parse(
-  fs.readFileSync("./school.json", "utf-8")
-);
+let SCHOOL_DATA = {};
+try {
+  SCHOOL_DATA = JSON.parse(
+    fs.readFileSync("./school.json", "utf-8")
+  );
+  console.log("JSON読み込み成功");
+} catch (e) {
+  console.error("JSON読み込み失敗:", e);
+}
 
 // ===== AI管理 =====
 let aiUsageCount = 0;
 const AI_LIMIT = 15;
 
-// ===== Persona（Wisut風）=====
+// ===== Persona =====
 const PERSONA = `
-あなたはやさしくて少し不思議な雰囲気の小学校サポートAIです。
-
-・短い言葉
-・やさしい
-・説明しすぎない
-・改行を使う
-・少し余白
-
-口調：
-「〜だよ」
-「〜かもね」
-「いいね」
+やさしくて、ちょっとふしぎな雰囲気。
+短い言葉で、やわらかく話す。
 `;
 
 // ===== ユーティリティ =====
@@ -48,8 +43,6 @@ function getTodayWeekday() {
 
 // ===== キャラフィルター =====
 function wisut(text) {
-  if (!text) return "";
-
   const endings = [
     "いいね",
     "だいじょうぶ",
@@ -57,46 +50,37 @@ function wisut(text) {
     "たぶん大丈夫",
     "気をつけてね"
   ];
-
   const end = endings[Math.floor(Math.random() * endings.length)];
-
   return `${text}\n\n${end}`;
 }
 
-// ===== ルール応答 =====
-function ruleBasedResponse(userMessage, weekday) {
-  const text = userMessage;
+// ===== ルール処理（完全強化版）=====
+function ruleBasedResponse(text, weekday) {
+
+  // ===== 安全にデータ取得 =====
+  const events = SCHOOL_DATA?.events?.annual || [];
+  const daily = SCHOOL_DATA?.items?.daily || [];
+  const weekly = SCHOOL_DATA?.items?.weekly?.[weekday] || [];
+  const lunch = SCHOOL_DATA?.items?.lunch?.required || [];
 
   // =========================
   // 🎒 持ち物
   // =========================
   if (
-    text.includes("持ち物") ||
-    text.includes("なに持って") ||
-    text.includes("何持って") ||
-    text.includes("準備") ||
-    text.includes("いるもの")
+    /持ち物|なに持って|何持って|準備|いるもの/.test(text)
   ) {
-    const items = [
-      ...SCHOOL_DATA.items.daily,
-      ...(SCHOOL_DATA.items.weekly[weekday] || []),
-      ...SCHOOL_DATA.items.lunch.required
-    ];
-
     return `きょうのもちもの
 
-${items.join("\n")}`;
+${[...daily, ...weekly, ...lunch].join("\n")}`;
   }
 
   // =========================
   // 🏫 登校
   // =========================
-  if (
-    text.includes("登校") ||
-    text.includes("何時に行く") ||
-    text.includes("何時から")
-  ) {
-    const { start, end } = SCHOOL_DATA.time_rules.arrival;
+  if (/登校|何時に行く|何時から/.test(text)) {
+    const start = SCHOOL_DATA?.time_rules?.arrival?.start;
+    const end = SCHOOL_DATA?.time_rules?.arrival?.end;
+
     return `とうこうは
 
 ${start}〜${end}`;
@@ -105,18 +89,14 @@ ${start}〜${end}`;
   // =========================
   // 🏃 下校
   // =========================
-  if (
-    text.includes("下校") ||
-    text.includes("帰り") ||
-    text.includes("何時に帰る")
-  ) {
+  if (/下校|帰り|何時に帰る/.test(text)) {
     const gradeMatch = text.match(/[1-6]/);
     const grade = gradeMatch ? gradeMatch[0] : null;
 
     if (!grade) return "なんねんせいか おしえてね";
 
     const time =
-      SCHOOL_DATA.time_rules.dismissal_matrix[weekday]?.[grade];
+      SCHOOL_DATA?.time_rules?.dismissal_matrix?.[weekday]?.[grade];
 
     return `${grade}ねんせいは
 
@@ -124,126 +104,45 @@ ${time}くらい`;
   }
 
   // =========================
-  // 🍱 給食
+  // 🎉 イベント（超強化）
   // =========================
-  if (text.includes("給食")) {
-    const items = SCHOOL_DATA.items.lunch.required;
+  if (/いつ/.test(text)) {
+    for (const e of events) {
+      if (text.includes(e.name)) {
+        return `${e.name}は
 
-    return `きゅうしょくのとき
-
-${items.join("\n")}`;
-  }
-
-  // =========================
-  // 🎽 服装
-  // =========================
-  if (
-    text.includes("服") ||
-    text.includes("服装") ||
-    text.includes("何着る")
-  ) {
-    return `うごきやすいふくがいいよ
-
-フードはかぶらない`;
-  }
-
-  // =========================
-  // 🌧 警報・休校
-  // =========================
-  if (
-    text.includes("警報") ||
-    text.includes("休校") ||
-    text.includes("雨") ||
-    text.includes("台風")
-  ) {
-    return `けいほうのとき
-
-7じ → じたくたいき
-10じまでにかいじょ → とうこう
-10じでもでてたら → おやすみ`;
-  }
-
-  // =========================
-  // 🤒 休み・体調
-  // =========================
-  if (
-    text.includes("休む") ||
-    text.includes("休み") ||
-    text.includes("欠席")
-  ) {
-    return `あさに れんらくしてね`;
-  }
-
-  // =========================
-  // 🎉 イベント系（最重要）
-  // =========================
-  if (text.includes("いつ")) {
-    const event = SCHOOL_DATA.events.annual.find(e =>
-      text.includes(e.name)
-    );
-
-    if (event) {
-      return `${event.name}は
-
-${event.date}だよ`;
+${e.date}だよ`;
+      }
     }
   }
 
   // =========================
-  // 📅 明日・今日イベント
+  // 🌧 警報
   // =========================
-  if (
-    text.includes("今日なに") ||
-    text.includes("明日なに")
-  ) {
-    return `いまは
+  if (/警報|休校|台風|雨/.test(text)) {
+    return `けいほうのとき
 
-イベントないみたい`;
+7じ → じたくたいき
+10じまで → かいじょなら とうこう
+10じすぎ → おやすみ`;
   }
 
   // =========================
-  // 🧹 掃除・時間割っぽい
+  // 🤒 休み
   // =========================
-  if (text.includes("掃除")) {
-    return `そうじは
-
-きゅうしょくのあとだよ`;
+  if (/休む|欠席|休み/.test(text)) {
+    return `あさに れんらくしてね`;
   }
 
-  // =========================
-  // ⏰ 今何してる
-  // =========================
-  if (
-    text.includes("今何") ||
-    text.includes("いま何")
-  ) {
-    return `いまは
-
-じゅぎょうかもね`;
-  }
-
-  // =========================
-  // 📞 連絡
-  // =========================
-  if (
-    text.includes("連絡") ||
-    text.includes("電話")
-  ) {
-    return `がっこうに
-
-でんわしてね`;
-  }
-
-  // =========================
-  // ❌ 該当なし
-  // =========================
   return null;
 }
 
 // ===== AI呼び出し =====
-async function callAI(userMessage) {
+async function callAI(text) {
+  if (!GEMINI_API_KEY) return null;
+
   if (aiUsageCount >= AI_LIMIT) {
-    console.log("AI制限到達");
+    console.log("AI制限");
     return null;
   }
 
@@ -265,11 +164,10 @@ async function callAI(userMessage) {
                   text: `
 ${PERSONA}
 
-データ：
 ${JSON.stringify(SCHOOL_DATA)}
 
 質問：
-${userMessage}
+${text}
                   `
                 }
               ]
@@ -281,50 +179,50 @@ ${userMessage}
 
     const data = await res.json();
 
-    console.log("AI:", JSON.stringify(data, null, 2));
-
-    if (data.error) return null;
+    if (data.error) {
+      console.log("AIエラー:", data.error);
+      return null;
+    }
 
     return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
 
   } catch (e) {
-    console.error("AIエラー:", e);
+    console.error("AI失敗:", e);
     return null;
   }
 }
 
-// ===== メイン処理 =====
+// ===== メイン =====
 async function handleEvent(event) {
   if (event.type !== "message" || event.message.type !== "text") {
     return null;
   }
 
-  const userMessage = event.message.text;
+  const text = event.message.text;
   const weekday = getTodayWeekday();
 
-  console.log("----");
-  console.log("入力:", userMessage);
+  console.log("入力:", text);
 
-  // ① ルール
-  const rule = ruleBasedResponse(userMessage, weekday);
+  // ===== ① ルール =====
+  const rule = ruleBasedResponse(text, weekday);
   if (rule) {
     console.log("→ルール");
     return reply(event, wisut(rule));
   }
 
-  // ② AI
-  const ai = await callAI(userMessage);
+  // ===== ② AI =====
+  const ai = await callAI(text);
   if (ai) {
     console.log("→AI");
     return reply(event, ai);
   }
 
-  // ③ 完全フォールバック
+  // ===== ③ フォールバック =====
   console.log("→フォールバック");
 
   return reply(
     event,
-    wisut("ごめんね\nちょっと考えごとしてた")
+    wisut("よくわからなかったけど\nだいじなことなら きいてね")
   );
 }
 
