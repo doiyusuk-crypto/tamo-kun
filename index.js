@@ -16,7 +16,7 @@ app.post("/webhook", async (req, res) => {
       try {
         // 👇 Gemini API呼び出し
         const aiRes = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
   {
     method: "POST",
     headers: {
@@ -25,7 +25,6 @@ app.post("/webhook", async (req, res) => {
     body: JSON.stringify({
       contents: [
         {
-          role: "user",
           parts: [
             {
               text: `あなたは優しい家族向けアシスタントです。子供にも分かりやすく答えてください。\n\n${userMessage}`
