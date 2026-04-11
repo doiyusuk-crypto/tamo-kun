@@ -5,60 +5,42 @@
 
   "master": {
     "grades": [1, 2, 3, 4, 5, 6],
-    "weekdays": ["mon", "tue", "wed", "thu", "fri"]
+    "weekdays": {
+      "1": "mon",
+      "2": "tue",
+      "3": "wed",
+      "4": "thu",
+      "5": "fri"
+    }
   },
 
   "time_rules": {
     "arrival": {
       "start": "08:00",
       "end": "08:20",
+      "class_start": "08:30",
       "constraints": [
-        "08:00より前の登校は禁止",
-        "08:30に教室入室"
+        "08:00より前の登校は禁止"
       ]
     },
 
-    "dismissal_matrix": {
-      "mon": {
-        "1": "14:40",
-        "2": "15:30",
-        "3": "15:25",
-        "4": "15:25",
-        "5": "15:25",
-        "6": "15:25"
-      },
-      "tue": {
-        "1": "14:40",
-        "2": "15:30",
-        "3": "15:25",
-        "4": "15:25",
-        "5": "15:25",
-        "6": "15:25"
-      },
-      "wed": {
-        "1": "14:40",
-        "2": "15:30",
-        "3": "15:25",
-        "4": "15:25",
-        "5": "15:25",
-        "6": "15:25"
-      },
-      "thu": {
-        "1": "14:40",
-        "2": "15:30",
-        "3": "15:25",
-        "4": "15:25",
-        "5": "15:25",
-        "6": "15:25"
-      },
-      "fri": {
-        "1": "14:40",
-        "2": "15:30",
-        "3": "15:25",
-        "4": "15:25",
-        "5": "15:25",
-        "6": "15:25"
-      }
+    "dismissal_patterns": {
+      "default": [
+        { "grade": 1, "time": "14:40" },
+        { "grade": 2, "time": "15:30" },
+        { "grade": 3, "time": "15:25" },
+        { "grade": 4, "time": "15:25" },
+        { "grade": 5, "time": "15:25" },
+        { "grade": 6, "time": "15:25" }
+      ]
+    },
+
+    "dismissal_schedule": {
+      "mon": "default",
+      "tue": "default",
+      "wed": "default",
+      "thu": "default",
+      "fri": "default"
     },
 
     "club_activity": {
@@ -88,6 +70,7 @@
     },
 
     "lunch": {
+      "type": "school_lunch",
       "required": [
         "おはし",
         "ランチョンマット",
@@ -101,41 +84,29 @@
       ]
     },
 
-    "toolbox": [
-      "のり",
-      "クレパス",
-      "色えんぴつ",
-      "はさみ"
-    ]
+    "classroom_items": {
+      "toolbox": [
+        "のり",
+        "クレパス",
+        "色えんぴつ",
+        "はさみ"
+      ]
+    }
+  },
+
+  "conditions": {
+    "lunchDuty": false
   },
 
   "study": {
     "notebooks": {
       "by_grade": {
-        "1": {
-          "japanese": "10〜12マス",
-          "math": "10マス"
-        },
-        "2": {
-          "japanese": "12〜15マス",
-          "math": "10〜12マス"
-        },
-        "3": {
-          "japanese": "15マス",
-          "math": "12マス"
-        },
-        "4": {
-          "japanese": "15マス",
-          "math": "12マス"
-        },
-        "5": {
-          "japanese": "17マス",
-          "math": "12マス"
-        },
-        "6": {
-          "japanese": "17マス",
-          "math": "12マス"
-        }
+        "1": { "japanese": "10〜12マス", "math": "10マス" },
+        "2": { "japanese": "12〜15マス", "math": "10〜12マス" },
+        "3": { "japanese": "15マス", "math": "12マス" },
+        "4": { "japanese": "15マス", "math": "12マス" },
+        "5": { "japanese": "17マス", "math": "12マス" },
+        "6": { "japanese": "17マス", "math": "12マス" }
       }
     }
   },
@@ -156,34 +127,47 @@
 
   "exceptions": [
     {
-      "id": "weather_morning_alert",
+      "id": "weather_no_school",
+      "priority": 100,
       "condition": {
         "type": "weather_alert",
-        "time": "07:00",
+        "time": {
+          "operator": ">=",
+          "value": "10:00"
+        },
+        "status": "active"
+      },
+      "action": "休校"
+    },
+    {
+      "id": "weather_morning_alert",
+      "priority": 90,
+      "condition": {
+        "type": "weather_alert",
+        "time": {
+          "operator": "=",
+          "value": "07:00"
+        },
         "status": "active"
       },
       "action": "自宅待機"
     },
     {
       "id": "weather_release",
+      "priority": 80,
       "condition": {
         "type": "weather_alert",
-        "time": "<10:00",
+        "time": {
+          "operator": "<",
+          "value": "10:00"
+        },
         "status": "cleared"
       },
       "action": "登校"
     },
     {
-      "id": "weather_no_school",
-      "condition": {
-        "type": "weather_alert",
-        "time": ">=10:00",
-        "status": "active"
-      },
-      "action": "休校"
-    },
-    {
       "id": "earthquake",
+      "priority": 100,
       "condition": {
         "type": "earthquake",
         "level": "5弱以上"
@@ -191,7 +175,16 @@
       "action": "学校待機"
     },
     {
+      "id": "health_rule",
+      "priority": 95,
+      "condition": {
+        "type": "fever_or_infection"
+      },
+      "action": "登校禁止"
+    },
+    {
       "id": "absence_rule",
+      "priority": 50,
       "condition": {
         "type": "absence"
       },
@@ -199,25 +192,34 @@
     },
     {
       "id": "early_leave",
+      "priority": 60,
       "condition": {
         "type": "early_leave"
       },
       "action": "保護者迎え必須"
-    },
-    {
-      "id": "health_rule",
-      "condition": {
-        "type": "fever_or_infection"
-      },
-      "action": "登校禁止"
     }
   ],
 
+  "special_days": [
+    {
+      "date": "2026-04-15",
+      "type": "short_day",
+      "dismissal": "13:00"
+    }
+  ],
+
+  "messages": {
+    "arrival_warning": "8時より前には登校できません",
+    "late": "遅れています",
+    "no_school": "本日は休校です",
+    "standby": "自宅で待機してください"
+  },
+
   "bot_ready": {
     "queries": {
-      "getDismissalTime": "grade + weekday → dismissal_matrix参照",
-      "getTodayItems": "weekday → daily + weekly + lunch",
-      "checkException": "conditions → exceptions評価"
+      "getDismissalTime": "grade + weekday → pattern参照 → special_days優先",
+      "getTodayItems": "daily + weekly + lunch(required) + 条件によりduty追加",
+      "checkException": "priority順でconditions評価"
     }
   }
 }
