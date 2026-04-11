@@ -65,24 +65,17 @@ function wisut(text) {
 
 // ===== ルール応答 =====
 function ruleBasedResponse(userMessage, weekday) {
+  const text = userMessage;
 
-  // 下校
-  if (userMessage.includes("下校") || userMessage.includes("帰り")) {
-    const gradeMatch = userMessage.match(/[1-6]/);
-    const grade = gradeMatch ? gradeMatch[0] : null;
-
-    if (!grade) return "何年生か教えてね";
-
-    const time =
-      SCHOOL_DATA.time_rules.dismissal_matrix[weekday]?.[grade];
-
-    return `${grade}年生は\n${time} くらい`;
-  }
-
-  // 持ち物
+  // =========================
+  // 🎒 持ち物
+  // =========================
   if (
-    userMessage.includes("持ち物") ||
-    userMessage.includes("準備")
+    text.includes("持ち物") ||
+    text.includes("なに持って") ||
+    text.includes("何持って") ||
+    text.includes("準備") ||
+    text.includes("いるもの")
   ) {
     const items = [
       ...SCHOOL_DATA.items.daily,
@@ -90,15 +83,160 @@ function ruleBasedResponse(userMessage, weekday) {
       ...SCHOOL_DATA.items.lunch.required
     ];
 
-    return `今日の持ち物\n\n${items.join("\n")}`;
+    return `きょうのもちもの
+
+${items.join("\n")}`;
   }
 
-  // 登校
-  if (userMessage.includes("登校")) {
+  // =========================
+  // 🏫 登校
+  // =========================
+  if (
+    text.includes("登校") ||
+    text.includes("何時に行く") ||
+    text.includes("何時から")
+  ) {
     const { start, end } = SCHOOL_DATA.time_rules.arrival;
-    return `登校は\n${start}〜${end}`;
+    return `とうこうは
+
+${start}〜${end}`;
   }
 
+  // =========================
+  // 🏃 下校
+  // =========================
+  if (
+    text.includes("下校") ||
+    text.includes("帰り") ||
+    text.includes("何時に帰る")
+  ) {
+    const gradeMatch = text.match(/[1-6]/);
+    const grade = gradeMatch ? gradeMatch[0] : null;
+
+    if (!grade) return "なんねんせいか おしえてね";
+
+    const time =
+      SCHOOL_DATA.time_rules.dismissal_matrix[weekday]?.[grade];
+
+    return `${grade}ねんせいは
+
+${time}くらい`;
+  }
+
+  // =========================
+  // 🍱 給食
+  // =========================
+  if (text.includes("給食")) {
+    const items = SCHOOL_DATA.items.lunch.required;
+
+    return `きゅうしょくのとき
+
+${items.join("\n")}`;
+  }
+
+  // =========================
+  // 🎽 服装
+  // =========================
+  if (
+    text.includes("服") ||
+    text.includes("服装") ||
+    text.includes("何着る")
+  ) {
+    return `うごきやすいふくがいいよ
+
+フードはかぶらない`;
+  }
+
+  // =========================
+  // 🌧 警報・休校
+  // =========================
+  if (
+    text.includes("警報") ||
+    text.includes("休校") ||
+    text.includes("雨") ||
+    text.includes("台風")
+  ) {
+    return `けいほうのとき
+
+7じ → じたくたいき
+10じまでにかいじょ → とうこう
+10じでもでてたら → おやすみ`;
+  }
+
+  // =========================
+  // 🤒 休み・体調
+  // =========================
+  if (
+    text.includes("休む") ||
+    text.includes("休み") ||
+    text.includes("欠席")
+  ) {
+    return `あさに れんらくしてね`;
+  }
+
+  // =========================
+  // 🎉 イベント系（最重要）
+  // =========================
+  if (text.includes("いつ")) {
+    const event = SCHOOL_DATA.events.annual.find(e =>
+      text.includes(e.name)
+    );
+
+    if (event) {
+      return `${event.name}は
+
+${event.date}だよ`;
+    }
+  }
+
+  // =========================
+  // 📅 明日・今日イベント
+  // =========================
+  if (
+    text.includes("今日なに") ||
+    text.includes("明日なに")
+  ) {
+    return `いまは
+
+イベントないみたい`;
+  }
+
+  // =========================
+  // 🧹 掃除・時間割っぽい
+  // =========================
+  if (text.includes("掃除")) {
+    return `そうじは
+
+きゅうしょくのあとだよ`;
+  }
+
+  // =========================
+  // ⏰ 今何してる
+  // =========================
+  if (
+    text.includes("今何") ||
+    text.includes("いま何")
+  ) {
+    return `いまは
+
+じゅぎょうかもね`;
+  }
+
+  // =========================
+  // 📞 連絡
+  // =========================
+  if (
+    text.includes("連絡") ||
+    text.includes("電話")
+  ) {
+    return `がっこうに
+
+でんわしてね`;
+  }
+
+  // =========================
+  // ❌ 該当なし
+  // =========================
   return null;
 }
 
