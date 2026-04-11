@@ -1,5 +1,5 @@
 import express from "express";
-import line from "@line/bot-sdk";
+import { Client, middleware } from "@line/bot-sdk";
 import fetch from "node-fetch";
 import { google } from "googleapis";
 
@@ -12,10 +12,11 @@ const config = {
 };
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY; // ※簡易用
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-const client = new line.Client(config);
+// ★ 修正ポイント
+const client = new Client(config);
 
 // ===== Google Drive =====
 const drive = google.drive({
@@ -24,7 +25,7 @@ const drive = google.drive({
 });
 
 // ===== Webhook =====
-app.post("/webhook", line.middleware(config), async (req, res) => {
+app.post("/webhook", middleware(config), async (req, res) => {
   const events = req.body.events;
 
   await Promise.all(events.map(handleEvent));
@@ -47,52 +48,65 @@ async function handleEvent(event) {
       fields: "files(id, name)"
     });
 
-    const files = filesRes.data.files;
+    const files = filesRes.data.files || [];
+
+    if (files.length === 0) {
+      return client.replyMessage(event.replyToken, {
+        type: "text",
+        text: "フォルダに画像が見つかりませんでした"
+      });
+    }
 
     let allText = "";
 
     // ===== ② 画像を順番に解析 =====
     for (const file of files) {
-      const res = await drive.files.get({
-        fileId: file.id,
-        alt: "media"
-      });
+      try {
+        const res = await drive.files.get(
+          { fileId: file.id, alt: "media" },
+          { responseType: "arraybuffer" } // ★重要
+        );
 
-      const base64Image = Buffer.from(res.data).toString("base64");
+        const base64Image = Buffer.from(res.data).toString("base64");
 
-      const aiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: `この画像は小学校のプリントです。内容を簡潔に要約してください`
-                  },
-                  {
-                    inlineData: {
-                      mimeType: "image/jpeg",
-                      data: base64Image
+        const aiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: "この画像は小学校のプリントです。内容を簡潔に要約してください"
+                    },
+                    {
+                      inlineData: {
+                        mimeType: "image/jpeg",
+                        data: base64Image
+                      }
                     }
-                  }
-                ]
-              }
-            ]
-          })
-        }
-      );
+                  ]
+                }
+              ]
+            })
+          }
+        );
 
-      const data = await aiRes.json();
+        const data = await aiRes.json();
 
-      const text =
-        data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const text =
+          data.candidates?.[0]?.content?.parts?.[0]?.text ||
+          "(読み取れませんでした)";
 
-      allText += `\n[${file.name}]\n${text}\n`;
+        allText += `\n[${file.name}]\n${text}\n`;
+
+      } catch (e) {
+        console.error("画像解析エラー:", file.name, e);
+      }
     }
 
     // ===== ③ 全情報から回答生成 =====
