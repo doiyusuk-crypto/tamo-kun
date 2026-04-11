@@ -14,216 +14,203 @@ const config = {
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const client = new Client(config);
 
-// ===== JSON読み込み =====
+// ===== データ読み込み =====
 let SCHOOL_DATA = {};
+let USERS = {};
+
 try {
-  SCHOOL_DATA = JSON.parse(
-    fs.readFileSync("./school.json", "utf-8")
-  );
-  console.log("JSON読み込み成功");
+  SCHOOL_DATA = JSON.parse(fs.readFileSync("./school.json", "utf-8"));
+  console.log("school.json OK");
 } catch (e) {
-  console.error("JSON読み込み失敗:", e);
+  console.error("school.json NG", e);
+}
+
+try {
+  USERS = JSON.parse(fs.readFileSync("./users.json", "utf-8"));
+} catch {
+  USERS = {};
+}
+
+// ===== 保存 =====
+function saveUsers() {
+  fs.writeFileSync("./users.json", JSON.stringify(USERS, null, 2));
 }
 
 // ===== AI管理 =====
 let aiUsageCount = 0;
-const AI_LIMIT = 15;
+const AI_LIMIT = 10;
 
-// ===== Persona =====
-const PERSONA = `
-やさしくて、ちょっとふしぎな雰囲気。
-短い言葉で、やわらかく話す。
-`;
-
-// ===== ユーティリティ =====
+// ===== 曜日 =====
 function getTodayWeekday() {
   const map = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
   return map[new Date().getDay()];
 }
 
-// ===== キャラフィルター =====
+// ===== キャラ =====
 function wisut(text) {
   const endings = [
     "いいね",
     "だいじょうぶ",
     "ゆっくりでいいよ",
-    "たぶん大丈夫",
     "気をつけてね"
   ];
-  const end = endings[Math.floor(Math.random() * endings.length)];
-  return `${text}\n\n${end}`;
+  return text + "\n\n" + endings[Math.floor(Math.random() * endings.length)];
 }
 
-// ===== ルール処理（完全強化版）=====
-function ruleBasedResponse(text, weekday) {
+// ===== 学年登録 =====
+function registerGrade(userId, text) {
+  const grades = text.match(/[1-6]/g);
+  if (!grades) return null;
 
-  // ===== 安全にデータ取得 =====
+  USERS[userId] = [...new Set(grades)];
+  saveUsers();
+
+  return `おぼえたよ
+
+${grades.join("と")}ねんせいだね`;
+}
+
+// ===== 学年取得 =====
+function getGrades(userId) {
+  return USERS[userId] || [];
+}
+
+// ===== ルール処理 =====
+function ruleBasedResponse(text, weekday, userId) {
+
+  const grades = getGrades(userId);
+
   const events = SCHOOL_DATA?.events?.annual || [];
   const daily = SCHOOL_DATA?.items?.daily || [];
   const weekly = SCHOOL_DATA?.items?.weekly?.[weekday] || [];
   const lunch = SCHOOL_DATA?.items?.lunch?.required || [];
 
-  // =========================
-  // 🎒 持ち物
-  // =========================
-  if (
-    /持ち物|なに持って|何持って|準備|いるもの/.test(text)
-  ) {
+  // ===== 持ち物 =====
+  if (/持ち物|なに持って|準備/.test(text)) {
     return `きょうのもちもの
 
 ${[...daily, ...weekly, ...lunch].join("\n")}`;
   }
 
-  // =========================
-  // 🏫 登校
-  // =========================
-  if (/登校|何時に行く|何時から/.test(text)) {
+  // ===== 下校 =====
+  if (/下校|帰り/.test(text)) {
+
+    if (grades.length > 0) {
+      return grades.map(g => {
+        const time = SCHOOL_DATA?.time_rules?.dismissal_matrix?.[weekday]?.[g];
+        return `${g}ねんせい
+${time}`;
+      }).join("\n\n");
+    }
+
+    const g = text.match(/[1-6]/)?.[0];
+    if (!g) return "なんねんせいか おしえてね";
+
+    const time = SCHOOL_DATA?.time_rules?.dismissal_matrix?.[weekday]?.[g];
+    return `${g}ねんせい
+${time}`;
+  }
+
+  // ===== 登校 =====
+  if (/登校/.test(text)) {
     const start = SCHOOL_DATA?.time_rules?.arrival?.start;
     const end = SCHOOL_DATA?.time_rules?.arrival?.end;
-
     return `とうこうは
-
 ${start}〜${end}`;
   }
 
-  // =========================
-  // 🏃 下校
-  // =========================
-  if (/下校|帰り|何時に帰る/.test(text)) {
-    const gradeMatch = text.match(/[1-6]/);
-    const grade = gradeMatch ? gradeMatch[0] : null;
-
-    if (!grade) return "なんねんせいか おしえてね";
-
-    const time =
-      SCHOOL_DATA?.time_rules?.dismissal_matrix?.[weekday]?.[grade];
-
-    return `${grade}ねんせいは
-
-${time}くらい`;
-  }
-
-  // =========================
-  // 🎉 イベント（超強化）
-  // =========================
+  // ===== イベント =====
   if (/いつ/.test(text)) {
     for (const e of events) {
       if (text.includes(e.name)) {
         return `${e.name}は
-
-${e.date}だよ`;
+${e.date}`;
       }
     }
   }
 
-  // =========================
-  // 🌧 警報
-  // =========================
-  if (/警報|休校|台風|雨/.test(text)) {
+  // ===== 警報 =====
+  if (/警報|台風/.test(text)) {
     return `けいほうのとき
 
-7じ → じたくたいき
-10じまで → かいじょなら とうこう
-10じすぎ → おやすみ`;
+7じ → たいき
+10じまで → とうこう
+それいこう → おやすみ`;
   }
 
-  // =========================
-  // 🤒 休み
-  // =========================
-  if (/休む|欠席|休み/.test(text)) {
+  // ===== 休み =====
+  if (/休む|欠席/.test(text)) {
     return `あさに れんらくしてね`;
   }
 
   return null;
 }
 
-// ===== AI呼び出し =====
+// ===== AI =====
 async function callAI(text) {
   if (!GEMINI_API_KEY) return null;
-
-  if (aiUsageCount >= AI_LIMIT) {
-    console.log("AI制限");
-    return null;
-  }
+  if (aiUsageCount >= AI_LIMIT) return null;
 
   aiUsageCount++;
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `
-${PERSONA}
-
-${JSON.stringify(SCHOOL_DATA)}
-
-質問：
-${text}
-                  `
-                }
-              ]
-            }
-          ]
+          contents: [{
+            parts: [{
+              text: `やさしく短く答えて\n${JSON.stringify(SCHOOL_DATA)}\n質問:${text}`
+            }]
+          }]
         })
       }
     );
 
     const data = await res.json();
-
-    if (data.error) {
-      console.log("AIエラー:", data.error);
-      return null;
-    }
+    if (data.error) return null;
 
     return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
 
-  } catch (e) {
-    console.error("AI失敗:", e);
+  } catch {
     return null;
   }
 }
 
 // ===== メイン =====
 async function handleEvent(event) {
-  if (event.type !== "message" || event.message.type !== "text") {
-    return null;
-  }
+  if (event.type !== "message") return;
 
   const text = event.message.text;
+  const userId = event.source.userId;
   const weekday = getTodayWeekday();
 
   console.log("入力:", text);
 
-  // ===== ① ルール =====
-  const rule = ruleBasedResponse(text, weekday);
+  // ===== 学年登録 =====
+  if (text.includes("年生")) {
+    const msg = registerGrade(userId, text);
+    if (msg) return reply(event, wisut(msg));
+  }
+
+  // ===== ルール =====
+  const rule = ruleBasedResponse(text, weekday, userId);
   if (rule) {
     console.log("→ルール");
     return reply(event, wisut(rule));
   }
 
-  // ===== ② AI =====
+  // ===== AI =====
   const ai = await callAI(text);
   if (ai) {
     console.log("→AI");
     return reply(event, ai);
   }
 
-  // ===== ③ フォールバック =====
-  console.log("→フォールバック");
-
-  return reply(
-    event,
-    wisut("よくわからなかったけど\nだいじなことなら きいてね")
-  );
+  // ===== fallback =====
+  return reply(event, wisut("よくわからなかったけど\nだいじなことならきいてね"));
 }
 
 // ===== 返信 =====
@@ -234,7 +221,7 @@ function reply(event, text) {
   });
 }
 
-// ===== Webhook =====
+// ===== webhook =====
 app.post("/webhook", middleware(config), async (req, res) => {
   await Promise.all(req.body.events.map(handleEvent));
   res.json({ success: true });
