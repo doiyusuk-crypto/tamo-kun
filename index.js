@@ -14,8 +14,12 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const client = new Client(config);
 
-// ===== ★ JSONデータ（ここにさっきの構造を入れる） =====
-const SCHOOL_DATA = require("./school.json"); // ← 別ファイル推奨
+// ===== ★ JSONデータ =====
+import fs from "fs";
+
+const SCHOOL_DATA = JSON.parse(
+  fs.readFileSync("./school.json", "utf-8")
+);
 
 // ===== Webhook =====
 app.post("/webhook", middleware(config), async (req, res) => {
