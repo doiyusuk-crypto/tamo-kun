@@ -1,0 +1,223 @@
+{
+  "school": {
+    "name": "多聞台小学校"
+  },
+
+  "master": {
+    "grades": [1, 2, 3, 4, 5, 6],
+    "weekdays": ["mon", "tue", "wed", "thu", "fri"]
+  },
+
+  "time_rules": {
+    "arrival": {
+      "start": "08:00",
+      "end": "08:20",
+      "constraints": [
+        "08:00より前の登校は禁止",
+        "08:30に教室入室"
+      ]
+    },
+
+    "dismissal_matrix": {
+      "mon": {
+        "1": "14:40",
+        "2": "15:30",
+        "3": "15:25",
+        "4": "15:25",
+        "5": "15:25",
+        "6": "15:25"
+      },
+      "tue": {
+        "1": "14:40",
+        "2": "15:30",
+        "3": "15:25",
+        "4": "15:25",
+        "5": "15:25",
+        "6": "15:25"
+      },
+      "wed": {
+        "1": "14:40",
+        "2": "15:30",
+        "3": "15:25",
+        "4": "15:25",
+        "5": "15:25",
+        "6": "15:25"
+      },
+      "thu": {
+        "1": "14:40",
+        "2": "15:30",
+        "3": "15:25",
+        "4": "15:25",
+        "5": "15:25",
+        "6": "15:25"
+      },
+      "fri": {
+        "1": "14:40",
+        "2": "15:30",
+        "3": "15:25",
+        "4": "15:25",
+        "5": "15:25",
+        "6": "15:25"
+      }
+    },
+
+    "club_activity": {
+      "enabled_grades": [4, 5, 6],
+      "time": "15:45"
+    }
+  },
+
+  "items": {
+    "daily": [
+      "えんぴつ4〜6本",
+      "赤えんぴつ",
+      "消しゴム",
+      "定規",
+      "連絡帳"
+    ],
+
+    "weekly": {
+      "mon": [],
+      "tue": [],
+      "wed": [],
+      "thu": [],
+      "fri": [
+        "体操服",
+        "上履き"
+      ]
+    },
+
+    "lunch": {
+      "required": [
+        "おはし",
+        "ランチョンマット",
+        "ハンカチ",
+        "ティッシュ"
+      ],
+      "duty": [
+        "エプロン",
+        "ぼうし",
+        "マスク"
+      ]
+    },
+
+    "toolbox": [
+      "のり",
+      "クレパス",
+      "色えんぴつ",
+      "はさみ"
+    ]
+  },
+
+  "study": {
+    "notebooks": {
+      "by_grade": {
+        "1": {
+          "japanese": "10〜12マス",
+          "math": "10マス"
+        },
+        "2": {
+          "japanese": "12〜15マス",
+          "math": "10〜12マス"
+        },
+        "3": {
+          "japanese": "15マス",
+          "math": "12マス"
+        },
+        "4": {
+          "japanese": "15マス",
+          "math": "12マス"
+        },
+        "5": {
+          "japanese": "17マス",
+          "math": "12マス"
+        },
+        "6": {
+          "japanese": "17マス",
+          "math": "12マス"
+        }
+      }
+    }
+  },
+
+  "rules": {
+    "school_inside": [
+      "ろうかは走らない",
+      "特別教室は静かに移動",
+      "雨の日は室内で静かに過ごす",
+      "職員室はノックして入る"
+    ],
+    "school_outside": [
+      "寄り道禁止",
+      "お金の貸し借り禁止",
+      "知らない人についていかない"
+    ]
+  },
+
+  "exceptions": [
+    {
+      "id": "weather_morning_alert",
+      "condition": {
+        "type": "weather_alert",
+        "time": "07:00",
+        "status": "active"
+      },
+      "action": "自宅待機"
+    },
+    {
+      "id": "weather_release",
+      "condition": {
+        "type": "weather_alert",
+        "time": "<10:00",
+        "status": "cleared"
+      },
+      "action": "登校"
+    },
+    {
+      "id": "weather_no_school",
+      "condition": {
+        "type": "weather_alert",
+        "time": ">=10:00",
+        "status": "active"
+      },
+      "action": "休校"
+    },
+    {
+      "id": "earthquake",
+      "condition": {
+        "type": "earthquake",
+        "level": "5弱以上"
+      },
+      "action": "学校待機"
+    },
+    {
+      "id": "absence_rule",
+      "condition": {
+        "type": "absence"
+      },
+      "action": "当日朝に連絡必須"
+    },
+    {
+      "id": "early_leave",
+      "condition": {
+        "type": "early_leave"
+      },
+      "action": "保護者迎え必須"
+    },
+    {
+      "id": "health_rule",
+      "condition": {
+        "type": "fever_or_infection"
+      },
+      "action": "登校禁止"
+    }
+  ],
+
+  "bot_ready": {
+    "queries": {
+      "getDismissalTime": "grade + weekday → dismissal_matrix参照",
+      "getTodayItems": "weekday → daily + weekly + lunch",
+      "checkException": "conditions → exceptions評価"
+    }
+  }
+}
