@@ -215,6 +215,104 @@
     "standby": "自宅で待機してください"
   },
 
+  {
+  "events": [
+    {
+      "date": "2026-04-08",
+      "type": "ceremony",
+      "name": "始業式",
+      "target_grades": [1,2,3,4,5,6],
+      "tags": ["午前授業"]
+    },
+    {
+      "date": "2026-04-09",
+      "type": "ceremony",
+      "name": "入学式",
+      "target_grades": [1],
+      "tags": ["他学年休み"]
+    },
+    {
+      "date": "2026-04-14",
+      "type": "school_lunch",
+      "name": "給食開始",
+      "target_grades": [2,3,4,5,6]
+    },
+    {
+      "date": "2026-04-21",
+      "type": "event",
+      "name": "家庭訪問",
+      "target_grades": [1,2,3,4,5,6],
+      "end_date": "2026-04-24"
+    },
+    {
+      "date": "2026-05-09",
+      "type": "exam",
+      "name": "内科検診"
+    },
+    {
+      "date": "2026-05-30",
+      "type": "event",
+      "name": "運動会"
+    },
+    {
+      "date": "2026-07-07",
+      "type": "event",
+      "name": "個別懇談",
+      "end_date": "2026-07-10"
+    },
+    {
+      "date": "2026-07-17",
+      "type": "ceremony",
+      "name": "終業式"
+    },
+    {
+      "date": "2026-09-01",
+      "type": "ceremony",
+      "name": "始業式"
+    },
+    {
+      "date": "2026-10-18",
+      "type": "event",
+      "name": "自然学校",
+      "target_grades": [5],
+      "end_date": "2026-10-20"
+    },
+    {
+      "date": "2026-11-07",
+      "type": "event",
+      "name": "音楽会"
+    },
+    {
+      "date": "2026-11-24",
+      "type": "event",
+      "name": "修学旅行",
+      "target_grades": [6],
+      "end_date": "2026-11-25"
+    },
+    {
+      "date": "2026-12-24",
+      "type": "ceremony",
+      "name": "終業式"
+    },
+    {
+      "date": "2027-01-07",
+      "type": "ceremony",
+      "name": "始業式"
+    },
+    {
+      "date": "2027-03-19",
+      "type": "ceremony",
+      "name": "卒業式",
+      "target_grades": [6]
+    },
+    {
+      "date": "2027-03-24",
+      "type": "ceremony",
+      "name": "修了式"
+    }
+  ]
+}
+
   "bot_ready": {
     "queries": {
       "getDismissalTime": "grade + weekday → pattern参照 → special_days優先",
