@@ -1,79 +1,154 @@
 import express from "express";
+import line from "@line/bot-sdk";
+import fetch from "node-fetch";
+import { google } from "googleapis";
 
 const app = express();
-app.use(express.json());
 
-const CHANNEL_ACCESS_TOKEN = "aJTndzz8ufGZD65UnC+vrwSTJFOjYs07zG1E1uPq5GwEORODjmVm1sWJEvElFj9T0R7MPZsYe8LEdTE4V9MIvwKZu8/AWL9m6TWPQHFOC08TMw5vAEen9/EYZwBaJ4wMf1P7gpSthUyEKsZuYfCnUAdB04t89/1O/w1cDnyilFU=";
+// ===== 環境変数 =====
+const config = {
+  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.LINE_CHANNEL_SECRET
+};
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY; // ※簡易用
+const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-app.post("/webhook", async (req, res) => {
+const client = new line.Client(config);
+
+// ===== Google Drive =====
+const drive = google.drive({
+  version: "v3",
+  auth: GOOGLE_API_KEY
+});
+
+// ===== Webhook =====
+app.post("/webhook", line.middleware(config), async (req, res) => {
   const events = req.body.events;
 
-  for (const event of events) {
-    if (event.type === "message" && event.message.type === "text") {
-      const userMessage = event.message.text;
+  await Promise.all(events.map(handleEvent));
 
-      try {
-        // 👇 Gemini API呼び出し
-        const aiRes = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            {
-              text: `あなたは優しい家族向けアシスタントです。子供にも分かりやすく答えてください。\n\n${userMessage}`
-            }
-          ]
-        }
-      ]
-    })
+  res.json({ success: true });
+});
+
+// ===== メイン処理 =====
+async function handleEvent(event) {
+  if (event.type !== "message" || event.message.type !== "text") {
+    return null;
   }
-);
 
-const data = await aiRes.json();
-console.log("Gemini:", JSON.stringify(data, null, 2));
+  const userMessage = event.message.text;
 
-const replyText =
-  data.candidates?.[0]?.content?.parts?.[0]?.text ||
-  "うまく答えられませんでした";
+  try {
+    // ===== ① Driveから画像一覧取得 =====
+    const filesRes = await drive.files.list({
+      q: `'${FOLDER_ID}' in parents and mimeType contains 'image/'`,
+      fields: "files(id, name)"
+    });
 
-        // 👇 LINEに返信
-        await fetch("https://api.line.me/v2/bot/message/reply", {
+    const files = filesRes.data.files;
+
+    let allText = "";
+
+    // ===== ② 画像を順番に解析 =====
+    for (const file of files) {
+      const res = await drive.files.get({
+        fileId: file.id,
+        alt: "media"
+      });
+
+      const base64Image = Buffer.from(res.data).toString("base64");
+
+      const aiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${CHANNEL_ACCESS_TOKEN}`
+            "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            replyToken: event.replyToken,
-            messages: [
+            contents: [
               {
-                type: "text",
-                text: replyText
+                parts: [
+                  {
+                    text: `この画像は小学校のプリントです。内容を簡潔に要約してください`
+                  },
+                  {
+                    inlineData: {
+                      mimeType: "image/jpeg",
+                      data: base64Image
+                    }
+                  }
+                ]
               }
             ]
           })
-        });
-      } catch (err) {
-        console.error("エラー:", err);
-      }
+        }
+      );
+
+      const data = await aiRes.json();
+
+      const text =
+        data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      allText += `\n[${file.name}]\n${text}\n`;
     }
+
+    // ===== ③ 全情報から回答生成 =====
+    const finalRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `
+以下は家族共有フォルダ内のプリント情報です：
+
+${allText}
+
+この情報を元に質問に答えてください：
+
+${userMessage}
+                  `
+                }
+              ]
+            }
+          ]
+        })
+      }
+    );
+
+    const finalData = await finalRes.json();
+
+    const replyText =
+      finalData.candidates?.[0]?.content?.parts?.[0]?.text ||
+      "うまく答えられませんでした";
+
+    // ===== LINE返信 =====
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: replyText
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: "エラーが発生しました😢"
+    });
   }
+}
 
-  res.sendStatus(200);
-});
-
-app.get("/", (req, res) => {
-  res.send("Bot is running!");
-});
-
-const PORT = process.env.PORT || 3000;
+// ===== サーバー起動 =====
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`Server running on ${PORT}`);
+  console.log("Server running on " + PORT);
 });
