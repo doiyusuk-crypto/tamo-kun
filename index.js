@@ -4,7 +4,7 @@ const app = express();
 app.use(express.json());
 
 const CHANNEL_ACCESS_TOKEN = "aJTndzz8ufGZD65UnC+vrwSTJFOjYs07zG1E1uPq5GwEORODjmVm1sWJEvElFj9T0R7MPZsYe8LEdTE4V9MIvwKZu8/AWL9m6TWPQHFOC08TMw5vAEen9/EYZwBaJ4wMf1P7gpSthUyEKsZuYfCnUAdB04t89/1O/w1cDnyilFU=";
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 app.post("/webhook", async (req, res) => {
   const events = req.body.events;
@@ -13,48 +13,56 @@ app.post("/webhook", async (req, res) => {
     if (event.type === "message" && event.message.type === "text") {
       const userMessage = event.message.text;
 
-      // 👇 ChatGPTに問い合わせ
-      const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${OPENAI_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: "gpt-4.1-mini",
-          messages: [
-            {
-              role: "system",
-              content: "あなたは優しい家族アシスタントです。子供にもわかりやすく答えてください。"
+      try {
+        // 👇 Gemini API呼び出し
+        const aiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
             },
-            {
-              role: "user",
-              content: userMessage
-            }
-          ]
-        })
-      });
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: `あなたは優しい家族向けアシスタントです。子供にも分かりやすく答えてください。\n\nユーザー: ${userMessage}`
+                    }
+                  ]
+                }
+              ]
+            })
+          }
+        );
 
-      const data = await aiRes.json();
-      const replyText = data.choices[0].message.content;
+        const data = await aiRes.json();
+        console.log("Gemini:", data);
 
-      // 👇 LINEに返信
-      await fetch("https://api.line.me/v2/bot/message/reply", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${CHANNEL_ACCESS_TOKEN}`
-        },
-        body: JSON.stringify({
-          replyToken: event.replyToken,
-          messages: [
-            {
-              type: "text",
-              text: replyText
-            }
-          ]
-        })
-      });
+        const replyText =
+          data.candidates?.[0]?.content?.parts?.[0]?.text ||
+          "うまく答えられませんでした";
+
+        // 👇 LINEに返信
+        await fetch("https://api.line.me/v2/bot/message/reply", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${CHANNEL_ACCESS_TOKEN}`
+          },
+          body: JSON.stringify({
+            replyToken: event.replyToken,
+            messages: [
+              {
+                type: "text",
+                text: replyText
+              }
+            ]
+          })
+        });
+      } catch (err) {
+        console.error("エラー:", err);
+      }
     }
   }
 
