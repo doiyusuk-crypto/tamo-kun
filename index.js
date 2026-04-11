@@ -1,58 +1,66 @@
+import express from "express";
+import { Client, middleware } from "@line/bot-sdk";
+import fetch from "node-fetch";
+import fs from "fs";
+
+const app = express();
+
+// ===== 環境変数 =====
+const config = {
+  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.LINE_CHANNEL_SECRET
+};
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+const client = new Client(config);
+
+// ===== JSON読み込み =====
+const SCHOOL_DATA = JSON.parse(
+  fs.readFileSync("./school.json", "utf-8")
+);
+
 // ===== AI管理 =====
 let aiUsageCount = 0;
 const AI_LIMIT = 15;
 
-// ===== 人格設定 =====
+// ===== Persona（Wisut風）=====
 const PERSONA = `
-あなたは優しくてちょっとフレンドリーな小学校サポートAIです。
-保護者と子供の両方にわかりやすく、やさしい口調で答えてください。
-短く、親しみやすく話してください。
+あなたはやさしくて少し不思議な雰囲気の小学校サポートAIです。
+
+・短い言葉
+・やさしい
+・説明しすぎない
+・改行を使う
+・少し余白
+
+口調：
+「〜だよ」
+「〜かもね」
+「いいね」
 `;
 
-// ===== AI呼び出し =====
-async function callAI(userMessage) {
-  if (aiUsageCount >= AI_LIMIT) {
-    console.log("AI制限モード");
-    return null; // ← AI使わない
-  }
+// ===== ユーティリティ =====
+function getTodayWeekday() {
+  const map = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  return map[new Date().getDay()];
+}
 
-  aiUsageCount++;
+// ===== キャラフィルター =====
+function wisut(text) {
+  if (!text) return "";
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `
-${PERSONA}
+  const endings = [
+    "いいね",
+    "だいじょうぶ",
+    "ゆっくりでいいよ",
+    "たぶん大丈夫",
+    "気をつけてね"
+  ];
 
-以下の情報を元に答えてください：
-${JSON.stringify(SCHOOL_DATA)}
+  const end = endings[Math.floor(Math.random() * endings.length)];
 
-質問：
-${userMessage}
-                `
-              }
-            ]
-          }
-        ]
-      })
-    }
-  );
-
-  const data = await res.json();
-
-  if (data.error) {
-    console.log("AIエラー:", data.error);
-    return null;
-  }
-
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+  return `${text}\n\n${end}`;
 }
 
 // ===== ルール応答 =====
@@ -63,10 +71,12 @@ function ruleBasedResponse(userMessage, weekday) {
     const gradeMatch = userMessage.match(/[1-6]/);
     const grade = gradeMatch ? gradeMatch[0] : null;
 
-    if (!grade) return "何年生か教えてね😊";
+    if (!grade) return "何年生か教えてね";
 
-    const time = SCHOOL_DATA.time_rules.dismissal_matrix[weekday]?.[grade];
-    return `${grade}年生は ${time} 下校だよ！`;
+    const time =
+      SCHOOL_DATA.time_rules.dismissal_matrix[weekday]?.[grade];
+
+    return `${grade}年生は\n${time} くらい`;
   }
 
   // 持ち物
@@ -80,48 +90,122 @@ function ruleBasedResponse(userMessage, weekday) {
       ...SCHOOL_DATA.items.lunch.required
     ];
 
-    return `今日の持ち物だよ👇\n\n・${items.join("\n・")}`;
+    return `今日の持ち物\n\n${items.join("\n")}`;
   }
 
   // 登校
   if (userMessage.includes("登校")) {
     const { start, end } = SCHOOL_DATA.time_rules.arrival;
-    return `登校は ${start}〜${end} だよ！`;
+    return `登校は\n${start}〜${end}`;
   }
 
   return null;
 }
 
-// ===== 人格フィルター =====
-function applyPersona(text) {
-  if (!text) return null;
+// ===== AI呼び出し =====
+async function callAI(userMessage) {
+  if (aiUsageCount >= AI_LIMIT) {
+    console.log("AI制限到達");
+    return null;
+  }
 
-  return text
-    .replace(/です/g, "だよ")
-    .replace(/ます/g, "よ")
-    + " 😊";
+  aiUsageCount++;
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `
+${PERSONA}
+
+データ：
+${JSON.stringify(SCHOOL_DATA)}
+
+質問：
+${userMessage}
+                  `
+                }
+              ]
+            }
+          ]
+        })
+      }
+    );
+
+    const data = await res.json();
+
+    console.log("AI:", JSON.stringify(data, null, 2));
+
+    if (data.error) return null;
+
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+
+  } catch (e) {
+    console.error("AIエラー:", e);
+    return null;
+  }
 }
 
 // ===== メイン処理 =====
-async function generateResponse(userMessage) {
+async function handleEvent(event) {
+  if (event.type !== "message" || event.message.type !== "text") {
+    return null;
+  }
+
+  const userMessage = event.message.text;
   const weekday = getTodayWeekday();
+
+  console.log("----");
+  console.log("入力:", userMessage);
 
   // ① ルール
   const rule = ruleBasedResponse(userMessage, weekday);
   if (rule) {
-    console.log("ルール応答");
-    return applyPersona(rule);
+    console.log("→ルール");
+    return reply(event, wisut(rule));
   }
 
   // ② AI
   const ai = await callAI(userMessage);
   if (ai) {
-    console.log("AI応答");
-    return ai;
+    console.log("→AI");
+    return reply(event, ai);
   }
 
-  // ③ 最終フォールバック（ノーAI）
-  console.log("完全フォールバック");
+  // ③ 完全フォールバック
+  console.log("→フォールバック");
 
-  return applyPersona("ごめんね、今ちょっと頭が疲れてるみたい💦でも基本ルールなら答えられるよ！");
+  return reply(
+    event,
+    wisut("ごめんね\nちょっと考えごとしてた")
+  );
 }
+
+// ===== 返信 =====
+function reply(event, text) {
+  return client.replyMessage(event.replyToken, {
+    type: "text",
+    text
+  });
+}
+
+// ===== Webhook =====
+app.post("/webhook", middleware(config), async (req, res) => {
+  await Promise.all(req.body.events.map(handleEvent));
+  res.json({ success: true });
+});
+
+// ===== 起動 =====
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log("Server running on " + PORT);
+});
