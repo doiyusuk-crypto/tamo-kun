@@ -1,5 +1,5 @@
+import * as line from "@line/bot-sdk";
 import express from "express";
-import line from "@line/bot-sdk";
 import fs from "fs";
 import dotenv from "dotenv";
 import { GoogleGenerativeAI } from "@google/generative-ai";
