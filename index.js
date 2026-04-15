@@ -14,15 +14,9 @@ const DEBUG = true;
 // =========================
 // 🧠 環境変数チェック
 // =========================
-if (!process.env.LINE_TOKEN) {
-  throw new Error("LINE_TOKEN is missing");
-}
-if (!process.env.LINE_SECRET) {
-  throw new Error("LINE_SECRET is missing");
-}
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error("GEMINI_API_KEY is missing");
-}
+if (!process.env.LINE_TOKEN) throw new Error("LINE_TOKEN is missing");
+if (!process.env.LINE_SECRET) throw new Error("LINE_SECRET is missing");
+if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is missing");
 
 // =========================
 // LINE設定
@@ -35,22 +29,22 @@ const lineConfig = {
 const client = new line.Client(lineConfig);
 
 // =========================
-// Gemini設定
+// Gemini設定（修正済）
 // =========================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash",
+  model: "gemini-1.5-flash", // ★ここ重要
 });
 
 // =========================
-// ログ関数
+// ログ
 // =========================
 function log(label, data) {
   console.log(`\n🔧 [${label}]`, data);
 }
 
 // =========================
-// school.json読み込み
+// school.json
 // =========================
 function loadSchoolData() {
   try {
@@ -62,7 +56,7 @@ function loadSchoolData() {
 }
 
 // =========================
-// intent分類（軽量）
+// intent分類
 // =========================
 function classifyIntent(text) {
   if (text.match(/持ち物|お道具箱|準備/)) return "supplies";
@@ -72,7 +66,7 @@ function classifyIntent(text) {
 }
 
 // =========================
-// データ検索
+// 検索
 // =========================
 function searchData(intent, text, school) {
   const results = [];
@@ -103,7 +97,22 @@ function searchData(intent, text, school) {
 }
 
 // =========================
-// AI fallback
+// AI制限（無料枠対策）
+// =========================
+const lastAIUse = new Map();
+
+function canUseAI(userId) {
+  const now = Date.now();
+  const last = lastAIUse.get(userId) || 0;
+
+  if (now - last < 10000) return false; // 10秒制限
+
+  lastAIUse.set(userId, now);
+  return true;
+}
+
+// =========================
+// AI
 // =========================
 async function askAI(text, context) {
   const prompt = `
@@ -124,7 +133,7 @@ ${text}
 }
 
 // =========================
-// context生成（トークン節約）
+// context生成
 // =========================
 function buildContext(text, school) {
   const context = [];
@@ -163,11 +172,11 @@ app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
       if (event.type !== "message") continue;
 
       const text = event.message.text;
+      const userId = event.source.userId;
 
       log("INPUT", text);
 
       const intent = classifyIntent(text);
-
       log("INTENT", intent);
 
       let replyText = "";
@@ -190,24 +199,29 @@ app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
       // AI fallback
       // =========================
       else {
-        const context = buildContext(text, school);
+        if (!canUseAI(userId)) {
+          replyText = "少し待ってから試してね🙏";
+        } else {
+          const context = buildContext(text, school);
+          log("AI_CONTEXT", context);
 
-        log("AI_CONTEXT", context);
+          try {
+            replyText = await askAI(text, context);
+          } catch (e) {
+            console.error("AI ERROR", e);
+            replyText = "AIが混雑中です🙏";
+          }
 
-        replyText = await askAI(text, context);
-
-        log("AI_RESPONSE", replyText);
+          log("AI_RESPONSE", replyText);
+        }
       }
 
       // =========================
-      // デバッグ表示（LINE）
+      // DEBUG表示
       // =========================
       if (DEBUG) {
         replyText =
-          `🧪 DEBUG MODE\n` +
-          `intent: ${intent}\n` +
-          `input: ${text}\n\n` +
-          `---\n` +
+          `🧪 DEBUG\nintent: ${intent}\ninput: ${text}\n---\n` +
           replyText;
       }
 
@@ -224,10 +238,10 @@ app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
     try {
       await client.replyMessage(req.body.events[0].replyToken, {
         type: "text",
-        text: "エラー発生:\n" + err.message,
+        text: "エラー:\n" + err.message,
       });
     } catch (e) {
-      console.error("❌ reply failed", e);
+      console.error("返信失敗", e);
     }
 
     res.sendStatus(500);
