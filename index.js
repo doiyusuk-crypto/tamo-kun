@@ -33,7 +33,7 @@ const client = new line.Client(lineConfig);
 // =========================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash", // ★ここ重要
+  model: "gemini-2.5-flash", // ★ここ重要
 });
 
 // =========================
