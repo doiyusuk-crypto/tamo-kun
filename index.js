@@ -18,6 +18,9 @@ if (!process.env.LINE_TOKEN) throw new Error("LINE_TOKEN is missing");
 if (!process.env.LINE_SECRET) throw new Error("LINE_SECRET is missing");
 if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is missing");
 
+// ★ モデルを環境変数化
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+
 // =========================
 // LINE設定
 // =========================
@@ -29,11 +32,11 @@ const lineConfig = {
 const client = new line.Client(lineConfig);
 
 // =========================
-// Gemini設定（修正済）
+// Gemini設定
 // =========================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
-  model: "gemini-2.5-flash", // ★ここ重要
+  model: GEMINI_MODEL,
 });
 
 // =========================
@@ -41,6 +44,23 @@ const model = genAI.getGenerativeModel({
 // =========================
 function log(label, data) {
   console.log(`\n🔧 [${label}]`, data);
+}
+
+// =========================
+// 重複防止（超重要）
+// =========================
+const processedMessages = new Set();
+
+function isDuplicate(messageId) {
+  if (processedMessages.has(messageId)) return true;
+  processedMessages.add(messageId);
+
+  // メモリ制御
+  if (processedMessages.size > 100) {
+    processedMessages.clear();
+  }
+
+  return false;
 }
 
 // =========================
@@ -97,7 +117,7 @@ function searchData(intent, text, school) {
 }
 
 // =========================
-// AI制限（無料枠対策）
+// AI制限
 // =========================
 const lastAIUse = new Map();
 
@@ -105,7 +125,7 @@ function canUseAI(userId) {
   const now = Date.now();
   const last = lastAIUse.get(userId) || 0;
 
-  if (now - last < 10000) return false; // 10秒制限
+  if (now - last < 10000) return false;
 
   lastAIUse.set(userId, now);
   return true;
@@ -162,6 +182,9 @@ function buildContext(text, school) {
 const app = express();
 
 app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
+  // ★ 先に返す（再送防止）
+  res.sendStatus(200);
+
   try {
     const events = req.body.events;
     const school = loadSchoolData();
@@ -171,8 +194,17 @@ app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
     for (const event of events) {
       if (event.type !== "message") continue;
 
+      const messageId = event.message.id;
       const text = event.message.text;
       const userId = event.source.userId;
+
+      log("MESSAGE_ID", messageId);
+
+      // ★ 重複防止
+      if (isDuplicate(messageId)) {
+        console.log("⚠️ duplicate:", messageId);
+        continue;
+      }
 
       log("INPUT", text);
 
@@ -217,11 +249,11 @@ app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
       }
 
       // =========================
-      // DEBUG表示
+      // DEBUG
       // =========================
       if (DEBUG) {
         replyText =
-          `🧪 DEBUG\nintent: ${intent}\ninput: ${text}\n---\n` +
+          `🧪 DEBUG\nmodel: ${GEMINI_MODEL}\nintent: ${intent}\ninput: ${text}\n---\n` +
           replyText;
       }
 
@@ -230,21 +262,8 @@ app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
         text: replyText,
       });
     }
-
-    res.sendStatus(200);
   } catch (err) {
     console.error("🔥 ERROR:", err);
-
-    try {
-      await client.replyMessage(req.body.events[0].replyToken, {
-        type: "text",
-        text: "エラー:\n" + err.message,
-      });
-    } catch (e) {
-      console.error("返信失敗", e);
-    }
-
-    res.sendStatus(500);
   }
 });
 
