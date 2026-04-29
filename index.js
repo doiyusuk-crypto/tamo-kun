@@ -25,43 +25,39 @@ const lineConfig = {
 
 const client = new line.Client(lineConfig);
 
-@app.route("/ask", methods=["POST"])
-def ask():
-    try:
-        query = request.json.get("query", "")
+// =========================
+// RAG API
+// =========================
+async function askRAG(question) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
 
-        docs = load_data()
-        hits = search_docs(query, docs)
+  try {
+    const res = await fetch(`${process.env.RAG_API_URL}/ask`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      // ★ここを修正
+      body: JSON.stringify({ query: question }),
+      signal: controller.signal,
+    });
 
-        if not hits:
-            return jsonify({"answer": "該当する情報が見つかりませんでした。"})
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
 
-        # 🔥 安定化
-        hits = hits[:3]
-        context = "\n".join([d["content"][:300] for d in hits])
+    const data = await res.json();
 
-        prompt = f"""
-以下の情報だけを使って答えてください。
+    return data.answer || "回答が取得できませんでした";
+  } catch (e) {
+    console.error("❌ RAG API ERROR:", e);
+    return "検索エラーが発生しました🙏";
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
-{context}
-
-質問: {query}
-"""
-
-        try:
-            answer = call_gemini(prompt)
-        except Exception as e:
-            print("Gemini error:", e)
-            return jsonify({"answer": "AI生成でエラーが発生しました"})
-
-        return jsonify({
-            "answer": answer,
-            "sources": hits
-        })
-
-    except Exception as e:
-        print("RAG ERROR:", e)
-        return jsonify({"status": "error", "message": str(e)})
 
 
 // =========================
