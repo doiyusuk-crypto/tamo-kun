@@ -30,7 +30,7 @@ const client = new line.Client(lineConfig);
 // =========================
 async function askRAG(question) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000); // 8秒でタイムアウト
+  const timeout = setTimeout(() => controller.abort(), 15000);
 
   try {
     const res = await fetch(`${process.env.RAG_API_URL}/ask`, {
@@ -38,9 +38,14 @@ async function askRAG(question) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ question }),
+      // ★ここを修正
+      body: JSON.stringify({ query: question }),
       signal: controller.signal,
     });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
 
     const data = await res.json();
 
